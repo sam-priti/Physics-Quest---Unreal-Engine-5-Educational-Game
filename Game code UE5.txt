@@ -1,0 +1,666 @@
+// PHYSICS QUEST - Educational Physics Game in Unreal Engine 5
+// Main Character Controller Class Header
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "PhysicsQuestCharacter.generated.h"
+
+UCLASS()
+class PHYSICSQUEST_API APhysicsQuestCharacter : public ACharacter
+{
+    GENERATED_BODY()
+
+public:
+    APhysicsQuestCharacter();
+
+    // Camera components
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
+    class USpringArmComponent* CameraBoom;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
+    class UCameraComponent* FollowCamera;
+
+    // Physics tool properties
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Tools")
+    float ForceMultiplier;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Tools")
+    float MaxGrabDistance;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Tools")
+    float GravityManipulationRadius;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics Tools")
+    float MaxMassGrabbable;
+
+    // Physics tool states
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Physics Tools")
+    bool bIsGrabbingObject;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Physics Tools")
+    bool bIsManipulatingGravity;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Physics Tools")
+    class UPhysicsHandleComponent* PhysicsHandle;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Physics Tools")
+    class USceneComponent* GrabLocation;
+
+protected:
+    virtual void BeginPlay() override;
+
+    // Input handlers
+    void MoveForward(float Value);
+    void MoveRight(float Value);
+    void Turn(float Value);
+    void LookUp(float Value);
+    void Jump();
+    void StopJumping();
+
+    // Physics tool functions
+    void AttemptGrab();
+    void ReleaseGrab();
+    void ToggleGravityManipulation();
+    void ApplyForceToGrabbedObject(float ForwardValue, float RightValue);
+    void UpdateGravityManipulationField();
+
+    // Current object being manipulated
+    UPROPERTY()
+    class UPrimitiveComponent* GrabbedComponent;
+
+    // Level progress tracking
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game Progress")
+    int32 CurrentLevel;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game Progress")
+    int32 CollectedDataPoints;
+
+public:
+    virtual void Tick(float DeltaTime) override;
+    virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
+    // Puzzle interaction
+    UFUNCTION(BlueprintCallable, Category = "Puzzles")
+    void InteractWithPuzzle();
+
+    UFUNCTION(BlueprintCallable, Category = "Puzzles")
+    void CollectDataPoint();
+
+    UFUNCTION(BlueprintCallable, Category = "Game Progress")
+    void CompleteLevel();
+
+    // UI feedback
+    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+    void UpdatePhysicsDataDisplay(const FString& NewText);
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+    void DisplayPhysicsFormula(const FString& FormulaText, const FString& Description);
+};
+
+// Physics Puzzle Base Class Header
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "PhysicsPuzzleBase.generated.h"
+
+UENUM(BlueprintType)
+enum class EPuzzleType : uint8
+{
+    Force,
+    Acceleration,
+    Momentum,
+    Energy,
+    Gravity,
+    Friction
+};
+
+UCLASS()
+class PHYSICSQUEST_API APhysicsPuzzleBase : public AActor
+{
+    GENERATED_BODY()
+    
+public:    
+    APhysicsPuzzleBase();
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Puzzle Properties")
+    EPuzzleType PuzzleType;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Puzzle Properties")
+    FString PuzzleDescription;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Puzzle Properties")
+    FString PhysicsFormula;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Puzzle Properties")
+    int32 DifficultyLevel;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Puzzle Properties")
+    bool bIsSolved;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Puzzle Components")
+    class UStaticMeshComponent* PuzzleBase;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Puzzle Components")
+    class UBoxComponent* InteractionZone;
+
+protected:
+    virtual void BeginPlay() override;
+
+public:    
+    virtual void Tick(float DeltaTime) override;
+
+    UFUNCTION(BlueprintCallable, Category = "Puzzle Interaction")
+    virtual bool AttemptSolvePuzzle(const FVector& AppliedForce, float Mass);
+
+    UFUNCTION(BlueprintNativeEvent, Category = "Puzzle Interaction")
+    void OnPuzzleSolved();
+    virtual void OnPuzzleSolved_Implementation();
+
+    UFUNCTION(BlueprintCallable, Category = "Puzzle Interaction")
+    FString GetHint();
+};
+
+// Newton's First Law Puzzle Implementation
+
+#include "NewtonsFirstLawPuzzle.h"
+#include "Components/StaticMeshComponent.h"
+#include "PhysicsEngine/PhysicsConstraintComponent.h"
+#include "Components/BoxComponent.h"
+#include "PhysicsQuestCharacter.h"
+#include "Kismet/GameplayStatics.h"
+
+ANewtonsFirstLawPuzzle::ANewtonsFirstLawPuzzle()
+{
+    PrimaryActorTick.bCanEverTick = true;
+    
+    PuzzleType = EPuzzleType::Force;
+    PuzzleDescription = "Demonstrate Newton's First Law by applying the correct force to overcome inertia.";
+    PhysicsFormula = "F = m * a";
+    DifficultyLevel = 1;
+
+    // Create components
+    InertiaObject = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InertiaObject"));
+    InertiaObject->SetupAttachment(PuzzleBase);
+    InertiaObject->SetSimulatePhysics(true);
+    InertiaObject->SetLinearDamping(0.5f);
+    InertiaObject->SetAngularDamping(0.5f);
+    
+    TargetZone = CreateDefaultSubobject<UBoxComponent>(TEXT("TargetZone"));
+    TargetZone->SetupAttachment(PuzzleBase);
+    TargetZone->SetCollisionProfileName(TEXT("OverlapAll"));
+    
+    ForceRequiredToMove = 500.0f;
+    TimeInTargetRequired = 2.0f;
+    CurrentTimeInTarget = 0.0f;
+}
+
+void ANewtonsFirstLawPuzzle::BeginPlay()
+{
+    Super::BeginPlay();
+    
+    TargetZone->OnComponentBeginOverlap.AddDynamic(this, &ANewtonsFirstLawPuzzle::OnTargetZoneOverlapBegin);
+    TargetZone->OnComponentEndOverlap.AddDynamic(this, &ANewtonsFirstLawPuzzle::OnTargetZoneOverlapEnd);
+    
+    InertiaObject->SetMassOverrideInKg(NAME_None, ObjectMass);
+}
+
+void ANewtonsFirstLawPuzzle::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+    
+    if (bObjectInTargetZone && !bIsSolved)
+    {
+        FVector Velocity = InertiaObject->GetPhysicsLinearVelocity();
+        
+        // Check if object is nearly at rest in target zone
+        if (Velocity.Size() < 10.0f)
+        {
+            CurrentTimeInTarget += DeltaTime;
+            
+            if (CurrentTimeInTarget >= TimeInTargetRequired)
+            {
+                bIsSolved = true;
+                OnPuzzleSolved();
+            }
+        }
+        else
+        {
+            CurrentTimeInTarget = 0.0f;
+        }
+    }
+}
+
+bool ANewtonsFirstLawPuzzle::AttemptSolvePuzzle(const FVector& AppliedForce, float Mass)
+{
+    if (bIsSolved)
+    {
+        return true;
+    }
+    
+    // Record the force applied for evaluation
+    LastAppliedForce = AppliedForce;
+    
+    // Calculate if the force would be sufficient according to F = ma
+    float RequiredForce = ObjectMass * 1.0f; // Assuming we need 1.0 m/s² acceleration
+    
+    if (AppliedForce.Size() >= RequiredForce)
+    {
+        // Force is enough to potentially solve the puzzle
+        // Actual solution is determined in Tick when object stays in the target zone
+        return false;
+    }
+    
+    return false;
+}
+
+void ANewtonsFirstLawPuzzle::OnTargetZoneOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+    if (OtherComp == InertiaObject)
+    {
+        bObjectInTargetZone = true;
+    }
+}
+
+void ANewtonsFirstLawPuzzle::OnTargetZoneOverlapEnd(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+    if (OtherComp == InertiaObject)
+    {
+        bObjectInTargetZone = false;
+        CurrentTimeInTarget = 0.0f;
+    }
+}
+
+void ANewtonsFirstLawPuzzle::OnPuzzleSolved_Implementation()
+{
+    Super::OnPuzzleSolved_Implementation();
+    
+    // Visual feedback
+    if (SuccessParticleSystem)
+    {
+        UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), SuccessParticleSystem, InertiaObject->GetComponentLocation());
+    }
+    
+    // Audio feedback
+    if (SuccessSound)
+    {
+        UGameplayStatics::PlaySoundAtLocation(this, SuccessSound, GetActorLocation());
+    }
+    
+    // Update player's knowledge database
+    APhysicsQuestCharacter* Character = Cast<APhysicsQuestCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+    if (Character)
+    {
+        Character->CollectDataPoint();
+        Character->DisplayPhysicsFormula(PhysicsFormula, "Newton's First Law: An object at rest stays at rest, and an object in motion stays in motion with the same speed and direction unless acted upon by an external force.");
+    }
+}
+
+// GameMode class for Physics Quest
+
+#include "PhysicsQuestGameMode.h"
+#include "PhysicsQuestCharacter.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameFramework/PlayerController.h"
+#include "PhysicsQuestSaveGame.h"
+
+APhysicsQuestGameMode::APhysicsQuestGameMode()
+{
+    // Set default pawn class to our custom character
+    static ConstructorHelpers::FClassFinder<APawn> PlayerPawnClassFinder(TEXT("/Game/Blueprints/BP_PhysicsQuestCharacter"));
+    DefaultPawnClass = PlayerPawnClassFinder.Class;
+    
+    // Configure game progression
+    TotalLevels = 6;
+    CurrentLevelIndex = 0;
+    
+    // Level names corresponding to Newton's Laws and other physics concepts
+    LevelNames.Add("Inertia Laboratory");
+    LevelNames.Add("Force and Acceleration");
+    LevelNames.Add("Action and Reaction");
+    LevelNames.Add("Momentum Conservation");
+    LevelNames.Add("Energy Transformation");
+    LevelNames.Add("Unified Physics Hub");
+    
+    RequiredDataPointsPerLevel.Add(3);  // Level 1 requires 3 data points
+    RequiredDataPointsPerLevel.Add(5);  // Level 2 requires 5 data points
+    RequiredDataPointsPerLevel.Add(7);  // Level 3 requires 7 data points
+    RequiredDataPointsPerLevel.Add(8);  // Level 4 requires 8 data points
+    RequiredDataPointsPerLevel.Add(10); // Level 5 requires 10 data points
+    RequiredDataPointsPerLevel.Add(12); // Final level requires 12 data points
+}
+
+void APhysicsQuestGameMode::BeginPlay()
+{
+    Super::BeginPlay();
+    
+    // Load saved game if it exists
+    LoadGame();
+    
+    // Initialize level
+    SetupCurrentLevel();
+}
+
+void APhysicsQuestGameMode::SetupCurrentLevel()
+{
+    // Get references to player and controller
+    APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+    APhysicsQuestCharacter* Character = Cast<APhysicsQuestCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+    
+    if (PC && Character)
+    {
+        // Update UI with level info
+        FString LevelInfoText = FString::Printf(TEXT("Level %d: %s\nData Points Required: %d"), 
+            CurrentLevelIndex + 1, 
+            *LevelNames[CurrentLevelIndex], 
+            RequiredDataPointsPerLevel[CurrentLevelIndex]);
+        
+        Character->UpdatePhysicsDataDisplay(LevelInfoText);
+        
+        // Spawn level-specific puzzles
+        SpawnLevelPuzzles();
+    }
+}
+
+void APhysicsQuestGameMode::SpawnLevelPuzzles()
+{
+    // Clear any existing puzzles
+    for (AActor* ExistingPuzzle : ActivePuzzles)
+    {
+        if (ExistingPuzzle)
+        {
+            ExistingPuzzle->Destroy();
+        }
+    }
+    ActivePuzzles.Empty();
+    
+    // Different puzzle types for different levels
+    TSubclassOf<APhysicsPuzzleBase> PuzzleClass;
+    
+    switch (CurrentLevelIndex)
+    {
+        case 0: // Inertia Laboratory - Newton's First Law
+            PuzzleClass = ANewtonsFirstLawPuzzle::StaticClass();
+            break;
+        case 1: // Force and Acceleration - Newton's Second Law
+            PuzzleClass = ANewtonsSecondLawPuzzle::StaticClass();
+            break;
+        case 2: // Action and Reaction - Newton's Third Law
+            PuzzleClass = ANewtonsThirdLawPuzzle::StaticClass();
+            break;
+        case 3: // Momentum Conservation
+            PuzzleClass = AMomentumPuzzle::StaticClass();
+            break;
+        case 4: // Energy Transformation
+            PuzzleClass = AEnergyPuzzle::StaticClass();
+            break;
+        case 5: // Unified Physics Hub - All concepts combined
+            PuzzleClass = AUnifiedPhysicsPuzzle::StaticClass();
+            break;
+        default:
+            return;
+    }
+    
+    // Spawn puzzle locations are defined in the level blueprint
+    TArray<AActor*> PuzzleSpawnPoints;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), APuzzleSpawnPoint::StaticClass(), PuzzleSpawnPoints);
+    
+    int32 PuzzlesToSpawn = FMath::Min(PuzzleSpawnPoints.Num(), RequiredDataPointsPerLevel[CurrentLevelIndex]);
+    
+    for (int32 i = 0; i < PuzzlesToSpawn; i++)
+    {
+        if (PuzzleSpawnPoints.IsValidIndex(i) && PuzzleClass)
+        {
+            FVector Location = PuzzleSpawnPoints[i]->GetActorLocation();
+            FRotator Rotation = PuzzleSpawnPoints[i]->GetActorRotation();
+            
+            FActorSpawnParameters SpawnParams;
+            SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
+            
+            APhysicsPuzzleBase* NewPuzzle = GetWorld()->SpawnActor<APhysicsPuzzleBase>(PuzzleClass, Location, Rotation, SpawnParams);
+            
+            if (NewPuzzle)
+            {
+                // Configure puzzle difficulty based on level
+                NewPuzzle->DifficultyLevel = CurrentLevelIndex + 1;
+                ActivePuzzles.Add(NewPuzzle);
+            }
+        }
+    }
+}
+
+void APhysicsQuestGameMode::CheckLevelCompletion(int32 CollectedDataPoints)
+{
+    if (CollectedDataPoints >= RequiredDataPointsPerLevel[CurrentLevelIndex])
+    {
+        // Level completed
+        APhysicsQuestCharacter* Character = Cast<APhysicsQuestCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+        if (Character)
+        {
+            Character->CompleteLevel();
+        }
+        
+        // Show completion UI
+        OnLevelCompleted.Broadcast(CurrentLevelIndex);
+        
+        // Save progress
+        SaveGame();
+    }
+}
+
+void APhysicsQuestGameMode::AdvanceToNextLevel()
+{
+    CurrentLevelIndex++;
+    
+    if (CurrentLevelIndex >= TotalLevels)
+    {
+        // Game completed
+        OnGameCompleted.Broadcast();
+        return;
+    }
+    
+    // Reset collected data points for new level
+    APhysicsQuestCharacter* Character = Cast<APhysicsQuestCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+    if (Character)
+    {
+        Character->CollectedDataPoints = 0;
+    }
+    
+    // Load next level
+    FString NextLevelName = FString::Printf(TEXT("Level_%d"), CurrentLevelIndex);
+    UGameplayStatics::OpenLevel(this, FName(*NextLevelName));
+    
+    // Save progress
+    SaveGame();
+}
+
+void APhysicsQuestGameMode::SaveGame()
+{
+    UPhysicsQuestSaveGame* SaveGameInstance = Cast<UPhysicsQuestSaveGame>(UGameplayStatics::CreateSaveGameObject(UPhysicsQuestSaveGame::StaticClass()));
+    
+    if (SaveGameInstance)
+    {
+        SaveGameInstance->CurrentLevelIndex = CurrentLevelIndex;
+        
+        APhysicsQuestCharacter* Character = Cast<APhysicsQuestCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+        if (Character)
+        {
+            SaveGameInstance->CollectedDataPoints = Character->CollectedDataPoints;
+        }
+        
+        UGameplayStatics::SaveGameToSlot(SaveGameInstance, "PhysicsQuestSave", 0);
+    }
+}
+
+void APhysicsQuestGameMode::LoadGame()
+{
+    if (UGameplayStatics::DoesSaveGameExist("PhysicsQuestSave", 0))
+    {
+        UPhysicsQuestSaveGame* LoadedGame = Cast<UPhysicsQuestSaveGame>(UGameplayStatics::LoadGameFromSlot("PhysicsQuestSave", 0));
+        
+        if (LoadedGame)
+        {
+            CurrentLevelIndex = LoadedGame->CurrentLevelIndex;
+            
+            APhysicsQuestCharacter* Character = Cast<APhysicsQuestCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+            if (Character)
+            {
+                Character->CollectedDataPoints = LoadedGame->CollectedDataPoints;
+            }
+        }
+    }
+}
+
+// Final Gravity Manipulation Tool Blueprint Function Library
+
+#include "GravityManipulationLibrary.h"
+#include "PhysicsEngine/PhysicsHandleComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "Components/SphereComponent.h"
+
+UGravityManipulationLibrary::UGravityManipulationLibrary()
+{
+}
+
+void UGravityManipulationLibrary::CreateLocalGravityField(UWorld* World, FVector Location, float Radius, float GravityStrength, float Duration, UParticleSystem* VisualEffect)
+{
+    if (!World)
+        return;
+
+    // Spawn visual effect
+    if (VisualEffect)
+    {
+        UGameplayStatics::SpawnEmitterAtLocation(World, VisualEffect, Location, FRotator::ZeroRotator, FVector(Radius / 100.0f));
+    }
+
+    // Find all physics objects in radius
+    TArray<FOverlapResult> OverlapResults;
+    FCollisionQueryParams QueryParams;
+    QueryParams.bTraceComplex = false;
+    
+    World->OverlapMultiByObjectType(
+        OverlapResults,
+        Location,
+        FQuat::Identity,
+        FCollisionObjectQueryParams(ECC_PhysicsBody),
+        FCollisionShape::MakeSphere(Radius),
+        QueryParams
+    );
+
+    TArray<UPrimitiveComponent*> AffectedComponents;
+    
+    // Apply gravity force to all physics objects
+    for (const FOverlapResult& Result : OverlapResults)
+    {
+        UPrimitiveComponent* PrimComp = Result.GetComponent();
+        if (PrimComp && PrimComp->IsSimulatingPhysics())
+        {
+            // Calculate direction and distance
+            FVector Direction = Location - PrimComp->GetComponentLocation();
+            float Distance = Direction.Size();
+            
+            if (Distance > 0.0f)
+            {
+                // Normalize direction and calculate force based on distance
+                Direction.Normalize();
+                
+                // Apply inverse square law for gravity
+                float ForceMagnitude = GravityStrength * PrimComp->GetMass() / FMath::Max(1.0f, Distance * Distance);
+                
+                // Apply force toward gravity center
+                PrimComp->AddForce(Direction * ForceMagnitude, NAME_None, true);
+                
+                AffectedComponents.Add(PrimComp);
+            }
+        }
+    }
+    
+    // Set up timer to continue applying force for duration
+    if (Duration > 0.0f && AffectedComponents.Num() > 0)
+    {
+        FTimerHandle TimerHandle;
+        FTimerDelegate TimerDelegate;
+        
+        TimerDelegate.BindUFunction(this, "UpdateGravityField", World, Location, Radius, GravityStrength, AffectedComponents);
+        
+        World->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, 0.05f, true, 0.0f);
+        
+        // Set up timer to clear the gravity field
+        FTimerHandle ClearTimerHandle;
+        FTimerDelegate ClearTimerDelegate;
+        
+        ClearTimerDelegate.BindUFunction(this, "ClearGravityField", World, TimerHandle);
+        
+        World->GetTimerManager().SetTimer(ClearTimerHandle, ClearTimerDelegate, Duration, false);
+    }
+}
+
+void UGravityManipulationLibrary::UpdateGravityField(UWorld* World, FVector Location, float Radius, float GravityStrength, const TArray<UPrimitiveComponent*>& AffectedComponents)
+{
+    if (!World)
+        return;
+        
+    for (UPrimitiveComponent* PrimComp : AffectedComponents)
+    {
+        if (PrimComp && PrimComp->IsSimulatingPhysics())
+        {
+            FVector Direction = Location - PrimComp->GetComponentLocation();
+            float Distance = Direction.Size();
+            
+            if (Distance > 0.0f && Distance <= Radius)
+            {
+                Direction.Normalize();
+                float ForceMagnitude = GravityStrength * PrimComp->GetMass() / FMath::Max(1.0f, Distance * Distance);
+                PrimComp->AddForce(Direction * ForceMagnitude, NAME_None, true);
+            }
+        }
+    }
+}
+
+void UGravityManipulationLibrary::ClearGravityField(UWorld* World, FTimerHandle& TimerHandle)
+{
+    if (World)
+    {
+        World->GetTimerManager().ClearTimer(TimerHandle);
+    }
+}
+
+bool UGravityManipulationLibrary::CreateAntiBuoyancyField(UWorld* World, FVector Location, float Radius, float BuoyancyStrength, UStaticMeshComponent* TargetObject)
+{
+    if (!World || !TargetObject || !TargetObject->IsSimulatingPhysics())
+        return false;
+        
+    // Calculate opposite direction of gravity (upward)
+    FVector GravityDirection = FVector(0, 0, -1);
+    
+    // Calculate buoyancy force
+    float ObjectMass = TargetObject->GetMass();
+    float BuoyancyForce = ObjectMass * 980.0f * BuoyancyStrength; // 980 cm/s² = approximately earth gravity
+    
+    // Apply upward force
+    TargetObject->AddForce(GravityDirection * -BuoyancyForce, NAME_None, true);
+    
+    return true;
+}
+
+// Apply Newton's Third Law demonstration
+void UGravityManipulationLibrary::DemonstrateThirdLaw(UPrimitiveComponent* ObjectA, UPrimitiveComponent* ObjectB, float ForceMagnitude)
+{
+    if (!ObjectA || !ObjectB || !ObjectA->IsSimulatingPhysics() || !ObjectB->IsSimulatingPhysics())
+        return;
+        
+    // Get direction from A to B
+    FVector Direction = ObjectB->GetComponentLocation() - ObjectA->GetComponentLocation();
+    Direction.Normalize();
+    
+    // Apply equal and opposite forces
+    ObjectA->AddImpulse(Direction * ForceMagnitude, NAME_None, true);
+    ObjectB->AddImpulse(-Direction * ForceMagnitude, NAME_None, true);
+}
