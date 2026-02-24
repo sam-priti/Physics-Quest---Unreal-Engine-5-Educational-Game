@@ -1,7 +1,7 @@
 """
 # EduGame – Gamifying Education (Frontend-Prototype)
 
-## Overview
+##  Overview
 EduGame is a responsive web prototype that demonstrates how gamification 
 principles can enhance educational engagement. It showcases structured 
 learning elements such as challenges, levels, rewards, and feedback systems 
